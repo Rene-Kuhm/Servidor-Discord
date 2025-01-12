@@ -5,6 +5,7 @@ import logging
 import traceback
 import threading
 import datetime
+import random
 import discord
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
@@ -87,26 +88,126 @@ async def on_error(event, *args, **kwargs):
     logger.error(f"Error en evento {event}")
     logger.error(traceback.format_exc())
 
+# Comandos de Moderación
+@bot.command(name='kick')
+@commands.has_permissions(kick_members=True)
+async def kick(ctx, miembro: discord.Member, *, razon=None):
+    """Expulsa a un miembro del servidor"""
+    try:
+        if razon:
+            await miembro.kick(reason=razon)
+            await ctx.send(f"🚫 {miembro.mention} ha sido expulsado. Razón: {razon}")
+        else:
+            await miembro.kick()
+            await ctx.send(f"🚫 {miembro.mention} ha sido expulsado.")
+        
+        # Logging de la acción
+        logger.info(f"Miembro expulsado: {miembro.name} por {ctx.author.name}")
+    except discord.Forbidden:
+        await ctx.send("No tengo permisos para expulsar miembros.")
+    except Exception as e:
+        await ctx.send(f"Ocurrió un error al expulsar: {e}")
+
+@bot.command(name='ban')
+@commands.has_permissions(ban_members=True)
+async def ban(ctx, miembro: discord.Member, *, razon=None):
+    """Banea a un miembro del servidor"""
+    try:
+        if razon:
+            await miembro.ban(reason=razon)
+            await ctx.send(f"🔨 {miembro.mention} ha sido baneado. Razón: {razon}")
+        else:
+            await miembro.ban()
+            await ctx.send(f"🔨 {miembro.mention} ha sido baneado.")
+        
+        # Logging de la acción
+        logger.info(f"Miembro baneado: {miembro.name} por {ctx.author.name}")
+    except discord.Forbidden:
+        await ctx.send("No tengo permisos para banear miembros.")
+    except Exception as e:
+        await ctx.send(f"Ocurrió un error al banear: {e}")
+
+@bot.command(name='clear')
+@commands.has_permissions(manage_messages=True)
+async def clear(ctx, cantidad: int = 10):
+    """Elimina mensajes en un canal"""
+    try:
+        # Limitar cantidad de mensajes para evitar sobrecarga
+        cantidad = min(cantidad, 100)
+        deleted = await ctx.channel.purge(limit=cantidad + 1)
+        await ctx.send(f"🗑️ Se han eliminado {len(deleted) - 1} mensajes.", delete_after=3)
+        
+        # Logging de la acción
+        logger.info(f"Mensajes eliminados: {len(deleted) - 1} por {ctx.author.name}")
+    except discord.Forbidden:
+        await ctx.send("No tengo permisos para eliminar mensajes.")
+    except Exception as e:
+        await ctx.send(f"Ocurrió un error al eliminar mensajes: {e}")
+
+# Comandos de Utilidad
+@bot.command(name='dado')
+async def dado(ctx):
+    """Lanza un dado"""
+    resultado = random.randint(1, 6)
+    await ctx.send(f"🎲 Has lanzado un dado: **{resultado}**")
+
+@bot.command(name='moneda')
+async def moneda(ctx):
+    """Lanza una moneda"""
+    resultado = random.choice(["Cara", "Cruz"])
+    await ctx.send(f"🪙 Has lanzado una moneda: **{resultado}**")
+
+@bot.command(name='encuesta')
+@commands.has_permissions(manage_messages=True)
+async def encuesta(ctx, *, pregunta):
+    """Crea una encuesta simple"""
+    embed = discord.Embed(title="📊 Nueva Encuesta", description=pregunta, color=discord.Color.blue())
+    message = await ctx.send(embed=embed)
+    await message.add_reaction('👍')
+    await message.add_reaction('👎')
+
+@bot.command(name='avatar')
+async def avatar(ctx, miembro: discord.Member = None):
+    """Muestra el avatar de un miembro"""
+    miembro = miembro or ctx.author
+    embed = discord.Embed(title=f"Avatar de {miembro.name}", color=discord.Color.blue())
+    embed.set_image(url=miembro.display_avatar.url)
+    await ctx.send(embed=embed)
+
 # Comando de ayuda personalizado
 @bot.command(name='help')
 async def help_command(ctx):
     """Muestra una lista de comandos disponibles"""
     embed = discord.Embed(
-        title=" Comandos Disponibles", 
+        title="🤖 Comandos Disponibles", 
         description="Lista de comandos para interactuar con el bot", 
         color=discord.Color.blue()
     )
     
-    commands_list = [
-        ("!ping", "Muestra la latencia del bot"),
-        ("!info", "Información básica del bot"),
-        ("!diagnostico", "Diagnóstico de permisos (Solo Administradores)"),
-        ("!servidor", "Información del servidor actual"),
-        ("!miembro @usuario", "Información de un miembro específico")
-    ]
+    comandos = {
+        "Información": [
+            ("!ping", "Muestra la latencia del bot"),
+            ("!info", "Información básica del bot"),
+            ("!diagnostico", "Diagnóstico de permisos (Solo Administradores)"),
+            ("!servidor", "Información del servidor actual"),
+            ("!miembro @usuario", "Información de un miembro específico"),
+            ("!avatar @usuario", "Muestra el avatar de un usuario")
+        ],
+        "Moderación": [
+            ("!kick @usuario", "Expulsa a un miembro"),
+            ("!ban @usuario", "Banea a un miembro"),
+            ("!clear [cantidad]", "Elimina mensajes (máx. 100)")
+        ],
+        "Diversión": [
+            ("!dado", "Lanza un dado"),
+            ("!moneda", "Lanza una moneda"),
+            ("!encuesta [pregunta]", "Crea una encuesta simple")
+        ]
+    }
     
-    for cmd, desc in commands_list:
-        embed.add_field(name=cmd, value=desc, inline=False)
+    for categoria, lista_comandos in comandos.items():
+        valor_comandos = "\n".join([f"`{cmd}`: {desc}" for cmd, desc in lista_comandos])
+        embed.add_field(name=categoria, value=valor_comandos, inline=False)
     
     await ctx.send(embed=embed)
 
@@ -204,6 +305,8 @@ async def on_command_error(ctx, error):
         await ctx.send("Comando no encontrado. Usa !help para ver los comandos disponibles.")
     elif isinstance(error, commands.MissingPermissions):
         await ctx.send("No tienes permisos para usar este comando.")
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send("Argumento inválido. Verifica el formato del comando.")
     else:
         await ctx.send(f"Ocurrió un error: {str(error)}")
 
