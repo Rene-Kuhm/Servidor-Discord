@@ -87,28 +87,6 @@ async def on_command_error(ctx, error):
     else:
         await ctx.send(f"Ocurrió un error: {str(error)}")
 
-def run_bot():
-    load_dotenv()
-    TOKEN = os.getenv('DISCORD_TOKEN')
-    
-    if not TOKEN:
-        logger.critical("No se encontró el token de Discord. Verifica tus variables de entorno.")
-        sys.exit(1)
-    
-    logger.info(f"Intentando conectar con token: {TOKEN[:10]}...")
-    
-    try:
-        bot.run(TOKEN)
-    except discord.LoginFailure as e:
-        logger.critical(f"Error de autenticación: {e}")
-        logger.critical("Verifica que tu token sea correcto y tenga los permisos necesarios.")
-        sys.exit(1)
-    except Exception as e:
-        logger.critical(f"Error crítico al iniciar el bot: {e}")
-        logger.critical(traceback.format_exc())
-        sys.exit(1)
-
-# Agregar un endpoint de salud para monitoreo
 from flask import Flask
 import threading
 
@@ -121,11 +99,32 @@ def health_check():
 def create_app():
     return app
 
+def run_bot():
+    load_dotenv()
+    TOKEN = os.getenv('DISCORD_TOKEN')
+    
+    if not TOKEN:
+        logger.critical("No se encontró el token de Discord. Verifica tus variables de entorno.")
+        sys.exit(1)
+    
+    logger.info(f"Intentando conectar con token: {TOKEN[:10]}...")
+    
+    try:
+        bot_thread = threading.Thread(target=lambda: bot.run(TOKEN))
+        bot_thread.start()
+    except discord.LoginFailure as e:
+        logger.critical(f"Error de autenticación: {e}")
+        logger.critical("Verifica que tu token sea correcto y tenga los permisos necesarios.")
+        sys.exit(1)
+    except Exception as e:
+        logger.critical(f"Error crítico al iniciar el bot: {e}")
+        logger.critical(traceback.format_exc())
+        sys.exit(1)
+
 def run_flask():
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
 
-# Iniciar servidor Flask en un hilo
 flask_thread = threading.Thread(target=run_flask)
 flask_thread.start()
 
