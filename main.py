@@ -160,6 +160,213 @@ Respuesta inteligente y contextual:"""
 # Inicializar asistente de IA
 ai_assistant = AIAssistant()
 
+# Importaciones adicionales
+import json
+import os
+
+# Base de datos de comandos del servidor
+class ServerCommandManager:
+    def __init__(self):
+        # Ruta para almacenar configuraciones de comandos por servidor
+        self.config_dir = 'server_configs'
+        os.makedirs(self.config_dir, exist_ok=True)
+    
+    def _get_config_path(self, guild_id):
+        """Obtener ruta de configuración para un servidor"""
+        return os.path.join(self.config_dir, f'{guild_id}_commands.json')
+    
+    def registrar_comando_personalizado(self, guild_id, comando, descripcion, categoria='Personalizado'):
+        """Registrar un nuevo comando personalizado para el servidor"""
+        try:
+            config_path = self._get_config_path(guild_id)
+            
+            # Cargar configuración existente
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+            else:
+                config = {"comandos_personalizados": []}
+            
+            # Añadir nuevo comando
+            nuevo_comando = {
+                "nombre": comando,
+                "descripcion": descripcion,
+                "categoria": categoria
+            }
+            
+            # Evitar duplicados
+            if not any(cmd['nombre'] == comando for cmd in config['comandos_personalizados']):
+                config['comandos_personalizados'].append(nuevo_comando)
+            
+            # Guardar configuración
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=4)
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error registrando comando personalizado: {e}")
+            return False
+    
+    def obtener_comandos_servidor(self, guild_id):
+        """Obtener todos los comandos disponibles para un servidor"""
+        try:
+            config_path = self._get_config_path(guild_id)
+            
+            # Comandos base del bot
+            comandos_base = {
+                "Información": [
+                    {"nombre": "!ping", "descripcion": "Muestra la latencia del bot"},
+                    {"nombre": "!info", "descripcion": "Información básica del bot"},
+                    {"nombre": "!diagnostico", "descripcion": "Diagnóstico de permisos (Solo Administradores)"},
+                    {"nombre": "!servidor", "descripcion": "Información del servidor actual"},
+                    {"nombre": "!miembro", "descripcion": "Información de un miembro específico"},
+                    {"nombre": "!avatar", "descripcion": "Muestra el avatar de un usuario"}
+                ],
+                "Moderación": [
+                    {"nombre": "!kick", "descripcion": "Expulsa a un miembro"},
+                    {"nombre": "!ban", "descripcion": "Banea a un miembro"},
+                    {"nombre": "!clear", "descripcion": "Elimina mensajes (máx. 100)"},
+                    {"nombre": "!warn", "descripcion": "Advierte a un miembro"},
+                    {"nombre": "!config_bienvenida", "descripcion": "Configura canal de bienvenida"}
+                ],
+                "Diversión": [
+                    {"nombre": "!dado", "descripcion": "Lanza un dado"},
+                    {"nombre": "!moneda", "descripcion": "Lanza una moneda"},
+                    {"nombre": "!encuesta", "descripcion": "Crea una encuesta simple"}
+                ],
+                "IA": [
+                    {"nombre": "!chat", "descripcion": "Chatear con el asistente de IA"},
+                    {"nombre": "@TDPBot", "descripcion": "Mencióname para obtener una respuesta"}
+                ]
+            }
+            
+            # Cargar comandos personalizados del servidor
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    comandos_personalizados = config.get('comandos_personalizados', [])
+                    
+                    # Añadir comandos personalizados
+                    for cmd in comandos_personalizados:
+                        categoria = cmd.get('categoria', 'Personalizado')
+                        if categoria not in comandos_base:
+                            comandos_base[categoria] = []
+                        comandos_base[categoria].append({
+                            "nombre": cmd['nombre'],
+                            "descripcion": cmd['descripcion']
+                        })
+            
+            return comandos_base
+        except Exception as e:
+            logger.error(f"Error obteniendo comandos del servidor: {e}")
+            return {}
+
+# Inicializar gestor de comandos
+command_manager = ServerCommandManager()
+
+# Comando para registrar comandos personalizados
+@bot.command(name='registrar_comando')
+@commands.has_permissions(administrator=True)
+async def registrar_comando(ctx, comando: str, *, descripcion: str):
+    """Registrar un nuevo comando personalizado para el servidor"""
+    try:
+        # Registrar comando
+        resultado = command_manager.registrar_comando_personalizado(
+            ctx.guild.id, 
+            comando, 
+            descripcion
+        )
+        
+        if resultado:
+            embed = discord.Embed(
+                title="✅ Comando Registrado", 
+                description=f"Comando `{comando}` añadido exitosamente", 
+                color=discord.Color.green()
+            )
+        else:
+            embed = discord.Embed(
+                title="❌ Error", 
+                description="No se pudo registrar el comando", 
+                color=discord.Color.red()
+            )
+        
+        await ctx.send(embed=embed)
+    except Exception as e:
+        logger.error(f"Error en registro de comando: {e}")
+        await ctx.send("Ocurrió un error al registrar el comando.")
+
+# Comando para ver comandos disponibles
+@bot.command(name='comandos')
+async def listar_comandos(ctx):
+    """Mostrar todos los comandos disponibles en el servidor"""
+    try:
+        # Obtener comandos del servidor
+        comandos = command_manager.obtener_comandos_servidor(ctx.guild.id)
+        
+        # Crear embed
+        embed = discord.Embed(
+            title="📋 Comandos Disponibles", 
+            description="Lista completa de comandos para este servidor", 
+            color=discord.Color.blue()
+        )
+        
+        # Añadir cada categoría
+        for categoria, lista_comandos in comandos.items():
+            valor_comandos = "\n".join([f"`{cmd['nombre']}`: {cmd['descripcion']}" for cmd in lista_comandos])
+            embed.add_field(name=categoria, value=valor_comandos, inline=False)
+        
+        await ctx.send(embed=embed)
+    except Exception as e:
+        logger.error(f"Error listando comandos: {e}")
+        await ctx.send("Ocurrió un error al listar los comandos.")
+
+# Actualizar comando de ayuda para incluir nuevos comandos
+@bot.command(name='help')
+async def help_command(ctx):
+    """Muestra una lista de comandos disponibles"""
+    embed = discord.Embed(
+        title="🤖 Comandos Disponibles", 
+        description="Lista de comandos para interactuar con el bot", 
+        color=discord.Color.blue()
+    )
+    
+    comandos = {
+        "Información": [
+            ("!ping", "Muestra la latencia del bot"),
+            ("!info", "Información básica del bot"),
+            ("!diagnostico", "Diagnóstico de permisos (Solo Administradores)"),
+            ("!servidor", "Información del servidor actual"),
+            ("!miembro @usuario", "Información de un miembro específico"),
+            ("!avatar @usuario", "Muestra el avatar de un usuario")
+        ],
+        "Moderación": [
+            ("!kick @usuario", "Expulsa a un miembro"),
+            ("!ban @usuario", "Banea a un miembro"),
+            ("!clear [cantidad]", "Elimina mensajes (máx. 100)"),
+            ("!config_bienvenida", "Configura canal de bienvenida"),
+            ("!warn @usuario", "Advierte a un miembro")
+        ],
+        "Diversión": [
+            ("!dado", "Lanza un dado"),
+            ("!moneda", "Lanza una moneda"),
+            ("!encuesta [pregunta]", "Crea una encuesta simple")
+        ],
+        "IA": [
+            ("!chat [mensaje]", "Chatear con el asistente de IA"),
+            ("@TDPBot", "Mencióname para obtener una respuesta")
+        ],
+        "Gestión de Comandos": [
+            ("!comandos", "Ver todos los comandos disponibles"),
+            ("!registrar_comando", "Registrar un comando personalizado (Solo Administradores)")
+        ]
+    }
+    
+    for categoria, lista_comandos in comandos.items():
+        valor_comandos = "\n".join([f"`{cmd}`: {desc}" for cmd, desc in lista_comandos])
+        embed.add_field(name=categoria, value=valor_comandos, inline=False)
+    
+    await ctx.send(embed=embed)
+
 # Eventos y comandos
 @bot.event
 async def on_ready():
@@ -483,6 +690,10 @@ async def help_command(ctx):
         "IA": [
             ("!chat [mensaje]", "Chatear con el asistente de IA"),
             ("@TDPBot", "Mencióname para obtener una respuesta")
+        ],
+        "Gestión de Comandos": [
+            ("!comandos", "Ver todos los comandos disponibles"),
+            ("!registrar_comando", "Registrar un comando personalizado (Solo Administradores)")
         ]
     }
     
