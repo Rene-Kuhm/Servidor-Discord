@@ -13,5 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar código del proyecto
 COPY . .
 
+# Puerto por defecto
+ENV PORT=8080
+
 # Comando para ejecutar el bot con gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "main:app"]
+CMD gunicorn --bind 0.0.0.0:$PORT main:app

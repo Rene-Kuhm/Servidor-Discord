@@ -118,6 +118,9 @@ app = Flask(__name__)
 def health_check():
     return "Bot de Discord funcionando", 200
 
+def create_app():
+    return app
+
 def run_flask():
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
