@@ -95,8 +95,9 @@ model, tokenizer = init_model()
 
 # Configuración de intents con todos los permisos
 intents = discord.Intents.all()
+intents.message_content = True
 
-# Crear bot con prefijo de comandos
+# Crear bot con intents y prefijo
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 # Tarea en segundo plano para monitoreo
