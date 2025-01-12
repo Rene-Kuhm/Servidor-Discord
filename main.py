@@ -226,8 +226,8 @@ class ServerCommandManager:
                     {"nombre": "!kick", "descripcion": "Expulsa a un miembro"},
                     {"nombre": "!ban", "descripcion": "Banea a un miembro"},
                     {"nombre": "!clear", "descripcion": "Elimina mensajes (máx. 100)"},
-                    {"nombre": "!warn", "descripcion": "Advierte a un miembro"},
-                    {"nombre": "!config_bienvenida", "descripcion": "Configura canal de bienvenida"}
+                    {"nombre": "!config_bienvenida", "descripcion": "Configura canal de bienvenida"},
+                    {"nombre": "!warn", "descripcion": "Advierte a un miembro"}
                 ],
                 "Diversión": [
                     {"nombre": "!dado", "descripcion": "Lanza un dado"},
@@ -656,6 +656,219 @@ async def on_message(message):
         except Exception as e:
             logger.error(f"Error en respuesta por mención: {e}")
 
+# Sistema de Respuestas Automáticas
+class AutoResponseManager:
+    def __init__(self):
+        self.config_dir = 'server_configs'
+        os.makedirs(self.config_dir, exist_ok=True)
+    
+    def _get_config_path(self, guild_id):
+        """Obtener ruta de configuración de respuestas automáticas"""
+        return os.path.join(self.config_dir, f'{guild_id}_autoresponse.json')
+    
+    def configurar_canal_respuesta(self, guild_id, channel_id):
+        """Configurar canal de respuestas automáticas"""
+        try:
+            config_path = self._get_config_path(guild_id)
+            
+            config = {
+                "canal_respuestas": channel_id
+            }
+            
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=4)
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error configurando canal de respuestas: {e}")
+            return False
+    
+    def obtener_canal_respuesta(self, guild_id):
+        """Obtener canal de respuestas automáticas"""
+        try:
+            config_path = self._get_config_path(guild_id)
+            
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    return config.get('canal_respuestas')
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error obteniendo canal de respuestas: {e}")
+            return None
+    
+    def agregar_respuesta_automatica(self, guild_id, trigger, respuesta):
+        """Agregar una respuesta automática"""
+        try:
+            config_path = self._get_config_path(guild_id)
+            
+            # Cargar configuración existente
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+            else:
+                config = {"respuestas_automaticas": []}
+            
+            # Añadir nueva respuesta
+            nueva_respuesta = {
+                "trigger": trigger.lower(),
+                "respuesta": respuesta
+            }
+            
+            # Evitar duplicados
+            if not any(resp['trigger'] == trigger.lower() for resp in config.get('respuestas_automaticas', [])):
+                config.setdefault('respuestas_automaticas', []).append(nueva_respuesta)
+            
+            # Guardar configuración
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=4)
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error agregando respuesta automática: {e}")
+            return False
+    
+    def obtener_respuestas_automaticas(self, guild_id):
+        """Obtener todas las respuestas automáticas"""
+        try:
+            config_path = self._get_config_path(guild_id)
+            
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    return config.get('respuestas_automaticas', [])
+            
+            return []
+        except Exception as e:
+            logger.error(f"Error obteniendo respuestas automáticas: {e}")
+            return []
+
+# Inicializar gestor de respuestas automáticas
+autoresponse_manager = AutoResponseManager()
+
+# Comando para configurar canal de respuestas automáticas
+@bot.command(name='config_autorespuesta')
+@commands.has_permissions(administrator=True)
+async def configurar_canal_autorespuesta(ctx, canal: discord.TextChannel = None):
+    """Configurar canal para respuestas automáticas"""
+    try:
+        # Si no se especifica canal, usar el actual
+        canal = canal or ctx.channel
+        
+        # Configurar canal
+        resultado = autoresponse_manager.configurar_canal_respuesta(ctx.guild.id, canal.id)
+        
+        if resultado:
+            embed = discord.Embed(
+                title="✅ Canal de Respuestas Automáticas", 
+                description=f"Canal configurado: {canal.mention}", 
+                color=discord.Color.green()
+            )
+        else:
+            embed = discord.Embed(
+                title="❌ Error", 
+                description="No se pudo configurar el canal", 
+                color=discord.Color.red()
+            )
+        
+        await ctx.send(embed=embed)
+    except Exception as e:
+        logger.error(f"Error en configuración de canal de respuestas: {e}")
+        await ctx.send("Ocurrió un error al configurar el canal.")
+
+# Comando para agregar respuesta automática
+@bot.command(name='agregar_autorespuesta')
+@commands.has_permissions(administrator=True)
+async def agregar_autorespuesta(ctx, trigger: str, *, respuesta: str):
+    """Agregar una respuesta automática"""
+    try:
+        # Agregar respuesta
+        resultado = autoresponse_manager.agregar_respuesta_automatica(
+            ctx.guild.id, 
+            trigger, 
+            respuesta
+        )
+        
+        if resultado:
+            embed = discord.Embed(
+                title="✅ Respuesta Automática Agregada", 
+                description=f"Trigger: `{trigger}`\nRespuesta: {respuesta}", 
+                color=discord.Color.green()
+            )
+        else:
+            embed = discord.Embed(
+                title="❌ Error", 
+                description="No se pudo agregar la respuesta automática", 
+                color=discord.Color.red()
+            )
+        
+        await ctx.send(embed=embed)
+    except Exception as e:
+        logger.error(f"Error agregando respuesta automática: {e}")
+        await ctx.send("Ocurrió un error al agregar la respuesta automática.")
+
+# Comando para listar respuestas automáticas
+@bot.command(name='listar_autorespuestas')
+@commands.has_permissions(administrator=True)
+async def listar_autorespuestas(ctx):
+    """Listar todas las respuestas automáticas"""
+    try:
+        # Obtener respuestas
+        respuestas = autoresponse_manager.obtener_respuestas_automaticas(ctx.guild.id)
+        
+        # Crear embed
+        embed = discord.Embed(
+            title="📋 Respuestas Automáticas", 
+            description="Lista de respuestas automáticas configuradas", 
+            color=discord.Color.blue()
+        )
+        
+        if respuestas:
+            for resp in respuestas:
+                embed.add_field(
+                    name=f"Trigger: {resp['trigger']}", 
+                    value=resp['respuesta'], 
+                    inline=False
+                )
+        else:
+            embed.description = "No hay respuestas automáticas configuradas"
+        
+        await ctx.send(embed=embed)
+    except Exception as e:
+        logger.error(f"Error listando respuestas automáticas: {e}")
+        await ctx.send("Ocurrió un error al listar las respuestas automáticas.")
+
+# Evento para manejar respuestas automáticas
+@bot.event
+async def on_message(message):
+    # Ignorar mensajes del propio bot
+    if message.author == bot.user:
+        return
+    
+    # Procesar comandos existentes
+    await bot.process_commands(message)
+    
+    try:
+        # Verificar canal de respuestas automáticas
+        canal_respuesta_id = autoresponse_manager.obtener_canal_respuesta(message.guild.id)
+        
+        # Si no hay canal configurado o el mensaje no está en ese canal, ignorar
+        if not canal_respuesta_id or message.channel.id != canal_respuesta_id:
+            return
+        
+        # Obtener respuestas automáticas
+        respuestas = autoresponse_manager.obtener_respuestas_automaticas(message.guild.id)
+        
+        # Verificar triggers
+        mensaje_lower = message.content.lower()
+        for resp in respuestas:
+            if resp['trigger'] in mensaje_lower:
+                await message.channel.send(resp['respuesta'])
+                break
+    except Exception as e:
+        logger.error(f"Error en respuestas automáticas: {e}")
+
 # Comando de ayuda personalizado
 @bot.command(name='help')
 async def help_command(ctx):
@@ -694,6 +907,11 @@ async def help_command(ctx):
         "Gestión de Comandos": [
             ("!comandos", "Ver todos los comandos disponibles"),
             ("!registrar_comando", "Registrar un comando personalizado (Solo Administradores)")
+        ],
+        "Respuestas Automáticas": [
+            ("!config_autorespuesta", "Configurar canal de respuestas automáticas"),
+            ("!agregar_autorespuesta", "Añadir respuesta automática"),
+            ("!listar_autorespuestas", "Listar respuestas automáticas")
         ]
     }
     
