@@ -1063,6 +1063,181 @@ def run_bot():
 # Inicializar base de datos al inicio
 init_mod_database()
 
+# Añadir respuestas automáticas predeterminadas
+def configurar_respuestas_predeterminadas(guild_id):
+    """Configurar un conjunto de respuestas automáticas predeterminadas"""
+    respuestas = [
+        # Saludos y bienvenida
+        {"trigger": "hola", "respuesta": "¡Bienvenido al servidor! Consulta las reglas en #reglas-servidor 👋"},
+        {"trigger": "hey", "respuesta": "¡Hola! Bienvenido a nuestra comunidad 🌟"},
+        {"trigger": "que tal", "respuesta": "¡Todo bien! Aquí estoy para ayudarte 😊"},
+        
+        # Información del servidor
+        {"trigger": "reglas", "respuesta": "Recuerda leer nuestras reglas en el canal #reglas-servidor para una mejor convivencia 📜"},
+        {"trigger": "discord", "respuesta": "¡Estamos usando Discord para comunicarnos! Si necesitas ayuda, menciona a un moderador 🎮"},
+        {"trigger": "ayuda", "respuesta": "Para obtener ayuda, usa !help o menciona a un moderador. Estamos aquí para asistirte 🤝"},
+        
+        # Moderación y comportamiento
+        {"trigger": "moderador", "respuesta": "Los moderadores están para ayudar. Sé respetuoso y sigue las reglas del servidor 🛡️"},
+        {"trigger": "reportar", "respuesta": "Si necesitas reportar algo, contacta a un moderador o usa el canal #reportes 🚨"},
+        
+        # Canales y comunicación
+        {"trigger": "canales", "respuesta": "Tenemos diversos canales para diferentes temas. Explóralos y encuentra donde mejor te sientas 📊"},
+        {"trigger": "invitar", "respuesta": "¿Quieres invitar a alguien? Comparte el enlace de invitación con tus amigos 🤝"},
+        
+        # Tono amigable y comunidad
+        {"trigger": "bot", "respuesta": "¡Soy el bot oficial del servidor! Usa !help para ver mis comandos 🤖"},
+        {"trigger": "comunidad", "respuesta": "Bienvenido a nuestra increíble comunidad. Aquí nos respetamos y nos divertimos juntos 🌈"},
+        
+        # Preguntas frecuentes
+        {"trigger": "como funciona", "respuesta": "Si tienes dudas sobre el funcionamiento del servidor, no dudes en preguntar a un moderador 🤔"},
+        {"trigger": "nuevos", "respuesta": "¡Los nuevos miembros son bienvenidos! Lee las reglas y preséntate en #presentaciones 🎉"},
+        
+        # Interacción y diversión
+        {"trigger": "juegos", "respuesta": "¿Te gustan los juegos? Tenemos canales dedicados a diferentes juegos. ¡Únete y diviértete! 🎮"},
+        {"trigger": "musica", "respuesta": "Amante de la música? Visita nuestro canal #música para compartir y escuchar 🎵"},
+        
+        # Soporte técnico
+        {"trigger": "problema", "respuesta": "Si tienes problemas técnicos, describe tu inconveniente en #soporte-tecnico 💻"},
+        {"trigger": "error", "respuesta": "Encontraste un error? Reportalo en #reportes con detalles específicos 🐞"}
+    ]
+    
+    # Registrar cada respuesta
+    for resp in respuestas:
+        autoresponse_manager.agregar_respuesta_automatica(guild_id, resp['trigger'], resp['respuesta'])
+
+# Comando para ver usuarios en línea
+@bot.command(name='online')
+async def usuarios_online(ctx):
+    """Mostrar usuarios en línea"""
+    try:
+        # Obtener miembros en línea
+        online_members = [
+            member for member in ctx.guild.members 
+            if member.status != discord.Status.offline and not member.bot
+        ]
+        
+        # Separar por estado
+        online = [m for m in online_members if m.status == discord.Status.online]
+        idle = [m for m in online_members if m.status == discord.Status.idle]
+        dnd = [m for m in online_members if m.status == discord.Status.do_not_disturb]
+        
+        # Crear embed
+        embed = discord.Embed(
+            title="👥 Usuarios en Línea", 
+            description=f"Total de usuarios en línea: {len(online_members)}", 
+            color=discord.Color.green()
+        )
+        
+        # Añadir secciones
+        if online:
+            embed.add_field(
+                name=f"🟢 En Línea ({len(online)})", 
+                value=", ".join(m.display_name for m in online[:10]) + 
+                      ("..." if len(online) > 10 else ""), 
+                inline=False
+            )
+        
+        if idle:
+            embed.add_field(
+                name=f"🟡 Ausente ({len(idle)})", 
+                value=", ".join(m.display_name for m in idle[:10]) + 
+                      ("..." if len(idle) > 10 else ""), 
+                inline=False
+            )
+        
+        if dnd:
+            embed.add_field(
+                name=f"🔴 No Molestar ({len(dnd)})", 
+                value=", ".join(m.display_name for m in dnd[:10]) + 
+                      ("..." if len(dnd) > 10 else ""), 
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+    except Exception as e:
+        logger.error(f"Error mostrando usuarios en línea: {e}")
+        await ctx.send("Ocurrió un error al mostrar los usuarios en línea.")
+
+# Evento de inicio para configurar respuestas automáticas
+@bot.event
+async def on_guild_join(guild):
+    """Configurar respuestas automáticas al unirse a un nuevo servidor"""
+    try:
+        # Configurar respuestas predeterminadas
+        configurar_respuestas_predeterminadas(guild.id)
+        
+        # Buscar canal de sistema o primer canal de texto
+        canal_bienvenida = guild.system_channel or guild.text_channels[0]
+        
+        # Mensaje de bienvenida
+        embed = discord.Embed(
+            title="🤖 Bot Instalado Exitosamente", 
+            description="Gracias por agregarme a tu servidor. He configurado respuestas automáticas predeterminadas.\n\n"
+                        "Comandos útiles:\n"
+                        "- `!help`: Ver todos los comandos\n"
+                        "- `!online`: Ver usuarios en línea\n"
+                        "- `!comandos`: Ver comandos del servidor", 
+            color=discord.Color.blue()
+        )
+        
+        await canal_bienvenida.send(embed=embed)
+    except Exception as e:
+        logger.error(f"Error en evento de ingreso a servidor: {e}")
+
+# Actualizar comando de ayuda
+@bot.command(name='help')
+async def help_command(ctx):
+    """Muestra una lista de comandos disponibles"""
+    embed = discord.Embed(
+        title="🤖 Comandos Disponibles", 
+        description="Lista de comandos para interactuar con el bot", 
+        color=discord.Color.blue()
+    )
+    
+    comandos = {
+        "Información": [
+            ("!ping", "Muestra la latencia del bot"),
+            ("!info", "Información básica del bot"),
+            ("!diagnostico", "Diagnóstico de permisos (Solo Administradores)"),
+            ("!servidor", "Información del servidor actual"),
+            ("!miembro @usuario", "Información de un miembro específico"),
+            ("!avatar @usuario", "Muestra el avatar de un usuario"),
+            ("!online", "Ver usuarios en línea")
+        ],
+        "Moderación": [
+            ("!kick @usuario", "Expulsa a un miembro"),
+            ("!ban @usuario", "Banea a un miembro"),
+            ("!clear [cantidad]", "Elimina mensajes (máx. 100)"),
+            ("!config_bienvenida", "Configura canal de bienvenida"),
+            ("!warn @usuario", "Advierte a un miembro")
+        ],
+        "Diversión": [
+            ("!dado", "Lanza un dado"),
+            ("!moneda", "Lanza una moneda"),
+            ("!encuesta [pregunta]", "Crea una encuesta simple")
+        ],
+        "IA": [
+            ("!chat [mensaje]", "Chatear con el asistente de IA"),
+            ("@TDPBot", "Mencióname para obtener una respuesta")
+        ],
+        "Gestión de Comandos": [
+            ("!comandos", "Ver todos los comandos disponibles"),
+            ("!registrar_comando", "Registrar un comando personalizado (Solo Administradores)")
+        ],
+        "Respuestas Automáticas": [
+            ("!config_autorespuesta", "Configurar canal de respuestas automáticas"),
+            ("!agregar_autorespuesta", "Añadir respuesta automática"),
+            ("!listar_autorespuestas", "Listar respuestas automáticas")
+        ]
+    }
+    
+    for categoria, lista_comandos in comandos.items():
+        valor_comandos = "\n".join([f"`{cmd}`: {desc}" for cmd, desc in lista_comandos])
+        embed.add_field(name=categoria, value=valor_comandos, inline=False)
+    
+    await ctx.send(embed=embed)
+
 # Iniciar bot al ejecutar el script
 if __name__ == '__main__':
     run_bot()
