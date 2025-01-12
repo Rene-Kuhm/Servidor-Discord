@@ -20,12 +20,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger('discord_bot')
 
-# Configuración de intents con permisos explícitos
-intents = discord.Intents.default()
-intents.members = True
-intents.message_content = True
-intents.guilds = True
-intents.guild_messages = True
+# Configuración de intents con todos los permisos
+intents = discord.Intents.all()
 
 # Crear bot con prefijo de comandos
 bot = commands.Bot(command_prefix='!', intents=intents)
@@ -51,6 +47,15 @@ async def on_ready():
                     logger.info(f'Canal de sistema: {system_channel.name}')
             except Exception as guild_error:
                 logger.error(f"Error obteniendo información de servidor {guild.name}: {guild_error}")
+        
+        # Establecer estado del bot
+        await bot.change_presence(
+            status=discord.Status.online, 
+            activity=discord.Activity(
+                type=discord.ActivityType.watching, 
+                name="Servidor Discord TDPBlog"
+            )
+        )
     except Exception as e:
         logger.error(f"Error en on_ready: {e}")
         logger.error(traceback.format_exc())
@@ -58,8 +63,6 @@ async def on_ready():
 @bot.event
 async def on_connect():
     logger.info("Conexión con Discord establecida exitosamente")
-    
-    # Información adicional de conexión
     logger.info(f"Latencia: {bot.latency * 1000:.2f} ms")
 
 @bot.event
@@ -86,41 +89,63 @@ async def bot_info(ctx):
     embed.add_field(name="ID", value=bot.user.id, inline=False)
     embed.add_field(name="Servidores", value=len(bot.guilds), inline=False)
     embed.add_field(name="Latencia", value=f"{round(bot.latency * 1000)}ms", inline=False)
+    embed.add_field(name="Estado", value=" Activo", inline=False)
     await ctx.send(embed=embed)
 
-# Comando para enviar mensaje
-@bot.command(name='enviar')
-async def enviar_mensaje(ctx, *, mensaje):
-    """Envía un mensaje en el canal actual"""
-    await ctx.send(mensaje)
-
-# Comando para subir imagen
-@bot.command(name='imagen')
-async def subir_imagen(ctx, url_imagen):
-    """Sube una imagen al canal"""
-    embed = discord.Embed()
-    embed.set_image(url=url_imagen)
-    await ctx.send(embed=embed)
-
-# Comando para crear embed personalizado
-@bot.command(name='embed')
-async def crear_embed(ctx, titulo, descripcion, color=None):
-    """Crea un embed personalizado"""
-    if color is None:
-        color = discord.Color.blue()
-    else:
-        color = discord.Color(int(color, 16))  # Convierte color hex
+# Comando de diagnóstico de permisos
+@bot.command(name='diagnostico')
+@commands.has_permissions(administrator=True)
+async def diagnostico(ctx):
+    """Muestra diagnóstico detallado de permisos y configuración"""
+    embed = discord.Embed(title="Diagnóstico del Bot", color=discord.Color.green())
     
-    embed = discord.Embed(title=titulo, description=descripcion, color=color)
+    # Información del servidor
+    embed.add_field(name="Servidor", value=ctx.guild.name, inline=False)
+    embed.add_field(name="ID del Servidor", value=ctx.guild.id, inline=False)
+    
+    # Permisos del bot
+    bot_member = ctx.guild.get_member(bot.user.id)
+    bot_permissions = bot_member.guild_permissions
+    
+    # Verificar permisos clave
+    key_permissions = [
+        "send_messages", 
+        "read_messages", 
+        "embed_links", 
+        "attach_files", 
+        "read_message_history"
+    ]
+    
+    permission_status = "\n".join([
+        f"{' ' if getattr(bot_permissions, perm) else ' '} {perm.replace('_', ' ').title()}" 
+        for perm in key_permissions
+    ])
+    
+    embed.add_field(name="Permisos del Bot", value=permission_status, inline=False)
+    
     await ctx.send(embed=embed)
 
-# Manejo de errores
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CommandNotFound):
-        await ctx.send("Comando no encontrado. Usa !help para ver los comandos disponibles.")
-    else:
-        await ctx.send(f"Ocurrió un error: {str(error)}")
+# Comando de información del servidor
+@bot.command(name='servidor')
+async def servidor(ctx):
+    """Muestra información del servidor"""
+    embed = discord.Embed(title="Información del Servidor", color=discord.Color.blue())
+    embed.add_field(name="Nombre", value=ctx.guild.name, inline=False)
+    embed.add_field(name="ID", value=ctx.guild.id, inline=False)
+    embed.add_field(name="Miembros", value=ctx.guild.member_count, inline=False)
+    embed.add_field(name="Canales", value=len(ctx.guild.text_channels), inline=False)
+    await ctx.send(embed=embed)
+
+# Comando de información de un miembro
+@bot.command(name='miembro')
+async def miembro(ctx, miembro: discord.Member):
+    """Muestra información de un miembro"""
+    embed = discord.Embed(title="Información del Miembro", color=discord.Color.blue())
+    embed.add_field(name="Nombre", value=miembro.name, inline=False)
+    embed.add_field(name="ID", value=miembro.id, inline=False)
+    embed.add_field(name="Rol", value=miembro.top_role.name, inline=False)
+    embed.add_field(name="Estado", value=miembro.status, inline=False)
+    await ctx.send(embed=embed)
 
 # Crear aplicación Flask para monitoreo
 app = Flask(__name__)
