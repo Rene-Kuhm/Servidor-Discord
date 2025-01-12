@@ -10,6 +10,9 @@ import discord
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from flask import Flask
+import asyncio
+import sqlite3
+from datetime import datetime, timedelta
 
 # Configuración de logging
 logging.basicConfig(
@@ -42,6 +45,44 @@ async def status_task():
         )
     except Exception as e:
         logger.error(f"Error en tarea de estado: {e}")
+
+# Configuración de base de datos de moderación
+def init_mod_database():
+    """Inicializar base de datos de moderación"""
+    try:
+        conn = sqlite3.connect('moderation.db')
+        cursor = conn.cursor()
+        
+        # Tabla de advertencias
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS warnings (
+                user_id INTEGER,
+                guild_id INTEGER,
+                moderator_id INTEGER,
+                reason TEXT,
+                timestamp DATETIME,
+                active INTEGER DEFAULT 1
+            )
+        ''')
+        
+        # Tabla de sanciones
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sanctions (
+                user_id INTEGER,
+                guild_id INTEGER,
+                type TEXT,
+                duration INTEGER,
+                reason TEXT,
+                timestamp DATETIME,
+                active INTEGER DEFAULT 1
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+        logger.info("Base de datos de moderación inicializada correctamente")
+    except Exception as e:
+        logger.error(f"Error inicializando base de datos de moderación: {e}")
 
 # Eventos y comandos
 @bot.event
@@ -168,6 +209,73 @@ async def clear(ctx, cantidad: int = 10):
     except Exception as e:
         await ctx.send(f"Ocurrió un error al eliminar mensajes: {e}")
 
+# Comando de advertencia profesional
+@bot.command(name='warn')
+@commands.has_permissions(kick_members=True)
+async def warn(ctx, member: discord.Member, *, reason="No se especificó razón"):
+    """Sistema profesional de advertencias"""
+    try:
+        # Conexión a base de datos
+        conn = sqlite3.connect('moderation.db')
+        cursor = conn.cursor()
+        
+        # Registrar advertencia
+        cursor.execute('''
+            INSERT INTO warnings 
+            (user_id, guild_id, moderator_id, reason, timestamp) 
+            VALUES (?, ?, ?, ?, ?)
+        ''', (
+            member.id, 
+            ctx.guild.id, 
+            ctx.author.id, 
+            reason, 
+            datetime.now()
+        ))
+        
+        # Obtener número de advertencias
+        cursor.execute('''
+            SELECT COUNT(*) FROM warnings 
+            WHERE user_id = ? AND guild_id = ? AND active = 1
+        ''', (member.id, ctx.guild.id))
+        warning_count = cursor.fetchone()[0]
+        
+        conn.commit()
+        conn.close()
+        
+        # Embed de advertencia
+        embed = discord.Embed(
+            title="⚠️ Sistema de Advertencias", 
+            color=discord.Color.orange()
+        )
+        embed.add_field(name="Miembro Advertido", value=member.mention, inline=False)
+        embed.add_field(name="Moderador", value=ctx.author.mention, inline=False)
+        embed.add_field(name="Razón", value=reason, inline=False)
+        embed.add_field(name="Número de Advertencias", value=str(warning_count), inline=False)
+        
+        await ctx.send(embed=embed)
+        
+        # Notificación privada al usuario
+        try:
+            await member.send(
+                f"Has recibido una advertencia en {ctx.guild.name}. "
+                f"Razón: {reason}\n"
+                f"Advertencias totales: {warning_count}"
+            )
+        except:
+            await ctx.send(f"No se pudo enviar mensaje privado a {member.mention}")
+        
+        # Acciones según número de advertencias
+        if warning_count == 3:
+            await member.timeout(timedelta(hours=1), reason="3 advertencias")
+            await ctx.send(f"{member.mention} ha sido silenciado por 1 hora debido a múltiples advertencias.")
+        elif warning_count >= 5:
+            await member.ban(reason="Máximo de advertencias alcanzado")
+            await ctx.send(f"{member.mention} ha sido baneado por acumular demasiadas advertencias.")
+        
+    except Exception as e:
+        logger.error(f"Error en comando de advertencia: {e}")
+        await ctx.send("Ocurrió un error procesando la advertencia.")
+
 # Comandos de Utilidad
 @bot.command(name='dado')
 async def dado(ctx):
@@ -236,7 +344,8 @@ async def help_command(ctx):
             ("!kick @usuario", "Expulsa a un miembro"),
             ("!ban @usuario", "Banea a un miembro"),
             ("!clear [cantidad]", "Elimina mensajes (máx. 100)"),
-            ("!config_bienvenida", "Configura canal de bienvenida")
+            ("!config_bienvenida", "Configura canal de bienvenida"),
+            ("!warn @usuario", "Advierte a un miembro")
         ],
         "Diversión": [
             ("!dado", "Lanza un dado"),
@@ -389,6 +498,9 @@ def run_bot():
         logger.critical(f"Error crítico al iniciar el bot: {e}")
         logger.critical(traceback.format_exc())
         sys.exit(1)
+
+# Inicializar base de datos al inicio
+init_mod_database()
 
 # Iniciar bot al ejecutar el script
 if __name__ == '__main__':
