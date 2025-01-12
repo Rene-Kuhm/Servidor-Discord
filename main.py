@@ -1,3 +1,4 @@
+# Importaciones y configuración
 import os
 import sys
 import logging
@@ -37,10 +38,19 @@ async def on_ready():
         logger.info(f'ID: {bot.user.id}')
         logger.info(f'Conectado en {len(bot.guilds)} servidores')
         
+        # Información detallada de cada servidor
         for guild in bot.guilds:
-            logger.info(f'Servidor: {guild.name} (ID: {guild.id})')
-            logger.info(f'Miembros: {guild.member_count}')
-            logger.info(f'Canales: {len(guild.text_channels)}')
+            try:
+                logger.info(f'Servidor: {guild.name} (ID: {guild.id})')
+                logger.info(f'Miembros: {guild.member_count}')
+                logger.info(f'Canales: {len(guild.text_channels)}')
+                
+                # Intentar obtener información del sistema
+                system_channel = guild.system_channel
+                if system_channel:
+                    logger.info(f'Canal de sistema: {system_channel.name}')
+            except Exception as guild_error:
+                logger.error(f"Error obteniendo información de servidor {guild.name}: {guild_error}")
     except Exception as e:
         logger.error(f"Error en on_ready: {e}")
         logger.error(traceback.format_exc())
@@ -48,6 +58,9 @@ async def on_ready():
 @bot.event
 async def on_connect():
     logger.info("Conexión con Discord establecida exitosamente")
+    
+    # Información adicional de conexión
+    logger.info(f"Latencia: {bot.latency * 1000:.2f} ms")
 
 @bot.event
 async def on_disconnect():
@@ -62,7 +75,18 @@ async def on_error(event, *args, **kwargs):
 @bot.command(name='ping')
 async def ping(ctx):
     """Comando de prueba para verificar la conectividad del bot"""
-    await ctx.send('Pong! Bot está funcionando.')
+    await ctx.send(f'Pong! Latencia: {round(bot.latency * 1000)}ms')
+
+# Comando de información del bot
+@bot.command(name='info')
+async def bot_info(ctx):
+    """Muestra información básica del bot"""
+    embed = discord.Embed(title="Información del Bot", color=discord.Color.blue())
+    embed.add_field(name="Nombre", value=bot.user.name, inline=False)
+    embed.add_field(name="ID", value=bot.user.id, inline=False)
+    embed.add_field(name="Servidores", value=len(bot.guilds), inline=False)
+    embed.add_field(name="Latencia", value=f"{round(bot.latency * 1000)}ms", inline=False)
+    await ctx.send(embed=embed)
 
 # Comando para enviar mensaje
 @bot.command(name='enviar')
