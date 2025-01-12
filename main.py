@@ -14,33 +14,22 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('bot.log', mode='w'),
-        logging.StreamHandler(sys.stdout)  # Añadir salida a consola
+        logging.StreamHandler(sys.stdout)  # Salida a consola
     ]
 )
 logger = logging.getLogger('discord_bot')
 
-# Crear aplicación Flask
-app = Flask(__name__)
-
-@app.route('/health')
-def health_check():
-    logger.info("Health check endpoint accessed")
-    return "Bot de Discord funcionando", 200
-
-def create_app():
-    return app
-
-# Configuración de intents
-intents = discord.Intents.all()
-intents.message_content = True  # Habilitar explícitamente intents de contenido de mensaje
+# Configuración de intents con permisos explícitos
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
+intents.guilds = True
+intents.guild_messages = True
 
 # Crear bot con prefijo de comandos
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Habilitar logging detallado para discord.py
-logging.getLogger('discord').setLevel(logging.INFO)
-logging.getLogger('discord.http').setLevel(logging.INFO)
-
+# Eventos y comandos
 @bot.event
 async def on_ready():
     try:
@@ -68,6 +57,12 @@ async def on_disconnect():
 async def on_error(event, *args, **kwargs):
     logger.error(f"Error en evento {event}")
     logger.error(traceback.format_exc())
+
+# Comando de prueba
+@bot.command(name='ping')
+async def ping(ctx):
+    """Comando de prueba para verificar la conectividad del bot"""
+    await ctx.send('Pong! Bot está funcionando.')
 
 # Comando para enviar mensaje
 @bot.command(name='enviar')
@@ -103,6 +98,17 @@ async def on_command_error(ctx, error):
     else:
         await ctx.send(f"Ocurrió un error: {str(error)}")
 
+# Crear aplicación Flask para monitoreo
+app = Flask(__name__)
+
+@app.route('/health')
+def health_check():
+    logger.info("Health check endpoint accessed")
+    return "Bot de Discord funcionando", 200
+
+def create_app():
+    return app
+
 def run_bot():
     load_dotenv()
     TOKEN = os.getenv('DISCORD_TOKEN')
@@ -114,7 +120,6 @@ def run_bot():
     logger.info(f"Intentando conectar con token: {TOKEN[:10]}...")
     
     try:
-        # Iniciar bot en un hilo separado
         def start_bot():
             try:
                 logger.info("Iniciando bot de Discord...")
