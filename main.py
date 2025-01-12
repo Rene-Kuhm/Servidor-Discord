@@ -12,8 +12,10 @@ from flask import Flask
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    filename='bot.log',
-    filemode='w'
+    handlers=[
+        logging.FileHandler('bot.log', mode='w'),
+        logging.StreamHandler(sys.stdout)  # Añadir salida a consola
+    ]
 )
 logger = logging.getLogger('discord_bot')
 
@@ -22,6 +24,7 @@ app = Flask(__name__)
 
 @app.route('/health')
 def health_check():
+    logger.info("Health check endpoint accessed")
     return "Bot de Discord funcionando", 200
 
 def create_app():
@@ -29,13 +32,14 @@ def create_app():
 
 # Configuración de intents
 intents = discord.Intents.all()
+intents.message_content = True  # Habilitar explícitamente intents de contenido de mensaje
 
 # Crear bot con prefijo de comandos
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # Habilitar logging detallado para discord.py
-logging.getLogger('discord').setLevel(logging.DEBUG)
-logging.getLogger('discord.http').setLevel(logging.DEBUG)
+logging.getLogger('discord').setLevel(logging.INFO)
+logging.getLogger('discord.http').setLevel(logging.INFO)
 
 @bot.event
 async def on_ready():
@@ -54,7 +58,7 @@ async def on_ready():
 
 @bot.event
 async def on_connect():
-    logger.info("Conexión establecida exitosamente")
+    logger.info("Conexión con Discord establecida exitosamente")
 
 @bot.event
 async def on_disconnect():
@@ -113,7 +117,11 @@ def run_bot():
         # Iniciar bot en un hilo separado
         def start_bot():
             try:
+                logger.info("Iniciando bot de Discord...")
                 bot.run(TOKEN)
+            except discord.LoginFailure as e:
+                logger.critical(f"Error de autenticación: {e}")
+                logger.critical("Verifica que tu token sea correcto y tenga los permisos necesarios.")
             except Exception as e:
                 logger.critical(f"Error al ejecutar el bot: {e}")
                 logger.critical(traceback.format_exc())
