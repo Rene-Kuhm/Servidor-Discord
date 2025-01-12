@@ -2,11 +2,13 @@ import os
 import sys
 import logging
 import traceback
+import threading
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from flask import Flask
 
-# Configuración de logging más detallada
+# Configuración de logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -15,15 +17,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger('discord_bot')
 
-# Habilitar logging detallado para discord.py
-logging.getLogger('discord').setLevel(logging.DEBUG)
-logging.getLogger('discord.http').setLevel(logging.DEBUG)
+# Crear aplicación Flask
+app = Flask(__name__)
+
+@app.route('/health')
+def health_check():
+    return "Bot de Discord funcionando", 200
+
+def create_app():
+    return app
 
 # Configuración de intents
 intents = discord.Intents.all()
 
 # Crear bot con prefijo de comandos
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+# Habilitar logging detallado para discord.py
+logging.getLogger('discord').setLevel(logging.DEBUG)
+logging.getLogger('discord.http').setLevel(logging.DEBUG)
 
 @bot.event
 async def on_ready():
@@ -87,18 +99,6 @@ async def on_command_error(ctx, error):
     else:
         await ctx.send(f"Ocurrió un error: {str(error)}")
 
-from flask import Flask
-import threading
-
-app = Flask(__name__)
-
-@app.route('/health')
-def health_check():
-    return "Bot de Discord funcionando", 200
-
-def create_app():
-    return app
-
 def run_bot():
     load_dotenv()
     TOKEN = os.getenv('DISCORD_TOKEN')
@@ -110,23 +110,21 @@ def run_bot():
     logger.info(f"Intentando conectar con token: {TOKEN[:10]}...")
     
     try:
-        bot_thread = threading.Thread(target=lambda: bot.run(TOKEN))
+        # Iniciar bot en un hilo separado
+        def start_bot():
+            try:
+                bot.run(TOKEN)
+            except Exception as e:
+                logger.critical(f"Error al ejecutar el bot: {e}")
+                logger.critical(traceback.format_exc())
+        
+        bot_thread = threading.Thread(target=start_bot)
         bot_thread.start()
-    except discord.LoginFailure as e:
-        logger.critical(f"Error de autenticación: {e}")
-        logger.critical("Verifica que tu token sea correcto y tenga los permisos necesarios.")
-        sys.exit(1)
     except Exception as e:
         logger.critical(f"Error crítico al iniciar el bot: {e}")
         logger.critical(traceback.format_exc())
         sys.exit(1)
 
-def run_flask():
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
-
-flask_thread = threading.Thread(target=run_flask)
-flask_thread.start()
-
+# Iniciar bot al ejecutar el script
 if __name__ == '__main__':
     run_bot()
