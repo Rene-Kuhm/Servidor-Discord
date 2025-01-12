@@ -88,6 +88,30 @@ async def on_error(event, *args, **kwargs):
     logger.error(f"Error en evento {event}")
     logger.error(traceback.format_exc())
 
+@bot.event
+async def on_member_join(member):
+    """Evento cuando un nuevo miembro se une al servidor"""
+    try:
+        # Buscar canal de bienvenida
+        canal_bienvenida = member.guild.system_channel or member.guild.text_channels[0]
+        
+        # Crear embed de bienvenida
+        embed = discord.Embed(
+            title="¡Nuevo Miembro!", 
+            description=f"¡Bienvenido {member.mention} al servidor {member.guild.name}! 🎉", 
+            color=discord.Color.green()
+        )
+        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.add_field(name="Cuenta creada", value=member.created_at.strftime("%d/%m/%Y"), inline=False)
+        embed.set_footer(text=f"Miembro #{member.guild.member_count}")
+        
+        await canal_bienvenida.send(embed=embed)
+        
+        # Logging
+        logger.info(f"Nuevo miembro unido: {member.name} en {member.guild.name}")
+    except Exception as e:
+        logger.error(f"Error en bienvenida de {member.name}: {e}")
+
 # Comandos de Moderación
 @bot.command(name='kick')
 @commands.has_permissions(kick_members=True)
@@ -174,6 +198,21 @@ async def avatar(ctx, miembro: discord.Member = None):
     embed.set_image(url=miembro.display_avatar.url)
     await ctx.send(embed=embed)
 
+@bot.command(name='config_bienvenida')
+@commands.has_permissions(administrator=True)
+async def config_bienvenida(ctx, canal: discord.TextChannel = None):
+    """Configura el canal de bienvenida"""
+    canal = canal or ctx.channel
+    
+    embed = discord.Embed(
+        title="Canal de Bienvenida Configurado", 
+        description=f"Los nuevos miembros serán bienvenidos en {canal.mention}", 
+        color=discord.Color.blue()
+    )
+    await ctx.send(embed=embed)
+    
+    # Aquí podrías añadir lógica para guardar la configuración en una base de datos
+
 # Comando de ayuda personalizado
 @bot.command(name='help')
 async def help_command(ctx):
@@ -196,7 +235,8 @@ async def help_command(ctx):
         "Moderación": [
             ("!kick @usuario", "Expulsa a un miembro"),
             ("!ban @usuario", "Banea a un miembro"),
-            ("!clear [cantidad]", "Elimina mensajes (máx. 100)")
+            ("!clear [cantidad]", "Elimina mensajes (máx. 100)"),
+            ("!config_bienvenida", "Configura canal de bienvenida")
         ],
         "Diversión": [
             ("!dado", "Lanza un dado"),
