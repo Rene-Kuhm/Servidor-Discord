@@ -13,6 +13,19 @@ from flask import Flask
 import asyncio
 import sqlite3
 from datetime import datetime, timedelta
+import re
+import json
+import nltk
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+from transformers import pipeline
+
+# Descargar recursos de NLTK
+try:
+    nltk.download('punkt', quiet=True)
+    nltk.download('stopwords', quiet=True)
+except:
+    logger.warning("No se pudieron descargar recursos de NLTK")
 
 # Configuración de logging
 logging.basicConfig(
@@ -83,6 +96,69 @@ def init_mod_database():
         logger.info("Base de datos de moderación inicializada correctamente")
     except Exception as e:
         logger.error(f"Error inicializando base de datos de moderación: {e}")
+
+# Configuración de IA conversacional
+class AIAssistant:
+    def __init__(self):
+        try:
+            # Inicializar modelo de generación de texto
+            self.generator = pipeline('text-generation', model='gpt2-medium')
+            
+            # Cargar contexto y personalidad
+            self.context = {
+                "nombre": "TDPBot",
+                "personalidad": "Un asistente inteligente, amable y servicial",
+                "conocimientos": ["tecnología", "programación", "discord", "comunidad"]
+            }
+            
+            # Cargar frases de inicio
+            self.conversation_starters = [
+                "Hola, ¿en qué puedo ayudarte hoy?",
+                "Estoy aquí para asistirte. ¿Qué necesitas?",
+                "¿Cómo puedo ser de ayuda?"
+            ]
+        except Exception as e:
+            logger.error(f"Error inicializando AI Assistant: {e}")
+            self.generator = None
+    
+    def generar_respuesta(self, mensaje, contexto=None):
+        """Genera una respuesta coherente"""
+        if not self.generator:
+            return "Lo siento, mi sistema de IA está temporalmente desactivado."
+        
+        try:
+            # Preprocesar mensaje
+            mensaje = re.sub(r'[^\w\s]', '', mensaje.lower())
+            tokens = word_tokenize(mensaje)
+            tokens = [w for w in tokens if w not in stopwords.words('spanish')]
+            
+            # Construir prompt
+            prompt = f"""Contexto: Eres {self.context['nombre']}, {self.context['personalidad']}.
+Mensaje del usuario: {mensaje}
+Respuesta inteligente y contextual:"""
+            
+            # Generar respuesta
+            respuestas = self.generator(
+                prompt, 
+                max_length=150, 
+                num_return_sequences=3,
+                temperature=0.7
+            )
+            
+            # Seleccionar la respuesta más coherente
+            respuesta = max(respuestas, key=lambda x: len(x['generated_text']))['generated_text']
+            
+            # Limpiar y formatear
+            respuesta = respuesta.split('Respuesta inteligente y contextual:')[-1].strip()
+            respuesta = re.sub(r'\s+', ' ', respuesta)
+            
+            return respuesta
+        except Exception as e:
+            logger.error(f"Error generando respuesta: {e}")
+            return random.choice(self.conversation_starters)
+
+# Inicializar asistente de IA
+ai_assistant = AIAssistant()
 
 # Eventos y comandos
 @bot.event
@@ -321,6 +397,58 @@ async def config_bienvenida(ctx, canal: discord.TextChannel = None):
     
     # Aquí podrías añadir lógica para guardar la configuración en una base de datos
 
+# Comando de respuesta inteligente
+@bot.command(name='chat')
+async def chat_ai(ctx, *, mensaje):
+    """Chatear con el asistente de IA"""
+    try:
+        # Generar respuesta
+        respuesta = ai_assistant.generar_respuesta(mensaje)
+        
+        # Crear embed para la respuesta
+        embed = discord.Embed(
+            title="🤖 Asistente IA", 
+            description=respuesta, 
+            color=discord.Color.blue()
+        )
+        embed.set_footer(text="Respuesta generada por IA")
+        
+        await ctx.send(embed=embed)
+    except Exception as e:
+        logger.error(f"Error en comando de chat: {e}")
+        await ctx.send("Disculpa, hubo un problema generando la respuesta.")
+
+# Evento de mención
+@bot.event
+async def on_message(message):
+    # Ignorar mensajes del propio bot
+    if message.author == bot.user:
+        return
+    
+    # Procesar comandos existentes
+    await bot.process_commands(message)
+    
+    # Responder si es mencionado
+    if bot.user.mentioned_in(message):
+        # Extraer texto sin menciones
+        texto = message.content.replace(f'<@{bot.user.id}>', '').strip()
+        
+        try:
+            # Generar respuesta
+            respuesta = ai_assistant.generar_respuesta(texto)
+            
+            # Crear embed
+            embed = discord.Embed(
+                title="🤖 Asistente IA", 
+                description=respuesta, 
+                color=discord.Color.blue()
+            )
+            embed.set_footer(text="Respuesta generada por IA")
+            
+            await message.channel.send(embed=embed)
+        except Exception as e:
+            logger.error(f"Error en respuesta por mención: {e}")
+
 # Comando de ayuda personalizado
 @bot.command(name='help')
 async def help_command(ctx):
@@ -351,6 +479,10 @@ async def help_command(ctx):
             ("!dado", "Lanza un dado"),
             ("!moneda", "Lanza una moneda"),
             ("!encuesta [pregunta]", "Crea una encuesta simple")
+        ],
+        "IA": [
+            ("!chat [mensaje]", "Chatear con el asistente de IA"),
+            ("@TDPBot", "Mencióname para obtener una respuesta")
         ]
     }
     

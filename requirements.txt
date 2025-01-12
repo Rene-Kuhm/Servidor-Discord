@@ -3,4 +3,6 @@ python-dotenv==1.0.0
 flask
 gunicorn
 PyNaCl==1.5.0  # Añadir soporte de voz
-discord-py-slash-command  # Comandos de barra opcional
+nltk
+transformers
+torch
