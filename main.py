@@ -681,33 +681,38 @@ async def chat_ai(ctx, *, mensaje):
 # Evento de mención
 @bot.event
 async def on_message(message):
-    # Ignorar mensajes del propio bot
+    # Evitar que el bot responda a sus propios mensajes
     if message.author == bot.user:
         return
-    
-    # Procesar comandos existentes
+
+    # Procesar comandos primero
     await bot.process_commands(message)
-    
-    # Responder si es mencionado
+
+    # Verificar si el bot fue mencionado
     if bot.user.mentioned_in(message):
-        # Extraer texto sin menciones
-        texto = message.content.replace(f'<@{bot.user.id}>', '').strip()
+        # Eliminar la mención del mensaje para procesar solo el contenido
+        content = message.content.replace(f'<@!{bot.user.id}>', '').replace(f'<@{bot.user.id}>', '').strip()
         
         try:
-            # Generar respuesta
-            respuesta = ai_assistant.generar_respuesta(texto)
+            # Si no hay contenido después de la mención, dar una respuesta por defecto
+            if not content:
+                await message.reply("¡Hola! ¿En qué puedo ayudarte? Usa !ayuda para ver mis comandos.")
+                return
+
+            # Generar respuesta usando el modelo
+            response = generate_response(content)
             
-            # Crear embed
-            embed = discord.Embed(
-                title="🤖 Asistente IA", 
-                description=respuesta, 
-                color=discord.Color.blue()
-            )
-            embed.set_footer(text="Respuesta generada por IA")
-            
-            await message.channel.send(embed=embed)
+            # Si la respuesta es muy larga, dividirla en múltiples mensajes
+            if len(response) > 2000:
+                chunks = [response[i:i + 2000] for i in range(0, len(response), 2000)]
+                for chunk in chunks:
+                    await message.reply(chunk)
+            else:
+                await message.reply(response)
+                
         except Exception as e:
-            logger.error(f"Error en respuesta por mención: {e}")
+            logger.error(f"Error al generar respuesta: {e}")
+            await message.reply("Lo siento, tuve un problema al procesar tu mensaje. Por favor, intenta de nuevo.")
 
 # Sistema de Respuestas Automáticas
 class AutoResponseManager:
@@ -895,7 +900,7 @@ async def listar_autorespuestas(ctx):
 # Evento para manejar respuestas automáticas
 @bot.event
 async def on_message(message):
-    # Ignorar mensajes del propio bot
+    # Evitar que el bot responda a sus propios mensajes
     if message.author == bot.user:
         return
     
