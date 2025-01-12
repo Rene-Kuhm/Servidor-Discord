@@ -18,7 +18,8 @@ import json
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
-from transformers import pipeline
+import torch
+from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
 
 # Descargar recursos de NLTK
 try:
@@ -37,6 +38,60 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger('discord_bot')
+
+# Configuración de recursos y memoria
+torch.cuda.empty_cache()  # Limpiar memoria GPU si está disponible
+import gc
+gc.collect()  # Limpiar memoria no utilizada
+
+# Configurar límites de memoria para el modelo
+MODEL_NAME = "distilgpt2"  # Modelo más ligero que gpt2-medium
+MAX_LENGTH = 100  # Limitar longitud de respuestas
+
+# Inicializar el modelo con configuración optimizada
+def init_model():
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME,
+            low_cpu_mem_usage=True,
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+        )
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+        if torch.cuda.is_available():
+            model = model.to("cuda")
+        return model, tokenizer
+    except Exception as e:
+        logger.error(f"Error inicializando modelo: {e}")
+        return None, None
+
+# Generar respuesta con límites de memoria
+async def generate_response(prompt, max_length=MAX_LENGTH):
+    try:
+        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=MAX_LENGTH)
+        if torch.cuda.is_available():
+            inputs = inputs.to("cuda")
+        
+        outputs = model.generate(
+            **inputs,
+            max_length=max_length,
+            num_return_sequences=1,
+            no_repeat_ngram_size=2,
+            temperature=0.7
+        )
+        
+        response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        
+        # Limpiar memoria
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        return response
+    except Exception as e:
+        logger.error(f"Error generando respuesta: {e}")
+        return "Lo siento, hubo un error al procesar tu mensaje."
+
+# Inicializar modelo y tokenizer
+model, tokenizer = init_model()
 
 # Configuración de intents con todos los permisos
 intents = discord.Intents.all()
@@ -102,7 +157,7 @@ class AIAssistant:
     def __init__(self):
         try:
             # Inicializar modelo de generación de texto
-            self.generator = pipeline('text-generation', model='gpt2-medium')
+            self.generator = pipeline('text-generation', model=MODEL_NAME)
             
             # Cargar contexto y personalidad
             self.context = {
@@ -138,15 +193,7 @@ Mensaje del usuario: {mensaje}
 Respuesta inteligente y contextual:"""
             
             # Generar respuesta
-            respuestas = self.generator(
-                prompt, 
-                max_length=150, 
-                num_return_sequences=3,
-                temperature=0.7
-            )
-            
-            # Seleccionar la respuesta más coherente
-            respuesta = max(respuestas, key=lambda x: len(x['generated_text']))['generated_text']
+            respuesta = asyncio.run(generate_response(prompt))
             
             # Limpiar y formatear
             respuesta = respuesta.split('Respuesta inteligente y contextual:')[-1].strip()
@@ -320,9 +367,9 @@ async def listar_comandos(ctx):
         logger.error(f"Error listando comandos: {e}")
         await ctx.send("Ocurrió un error al listar los comandos.")
 
-# Actualizar comando de ayuda para incluir nuevos comandos
-@bot.command(name='help')
-async def help_command(ctx):
+# Comando de ayuda
+@bot.command(name='ayuda')
+async def ayuda_command(ctx):
     """Muestra una lista de comandos disponibles"""
     embed = discord.Embed(
         title="🤖 Comandos Disponibles", 
@@ -337,7 +384,8 @@ async def help_command(ctx):
             ("!diagnostico", "Diagnóstico de permisos (Solo Administradores)"),
             ("!servidor", "Información del servidor actual"),
             ("!miembro @usuario", "Información de un miembro específico"),
-            ("!avatar @usuario", "Muestra el avatar de un usuario")
+            ("!avatar @usuario", "Muestra el avatar de un usuario"),
+            ("!online", "Ver usuarios en línea")
         ],
         "Moderación": [
             ("!kick @usuario", "Expulsa a un miembro"),
@@ -358,6 +406,11 @@ async def help_command(ctx):
         "Gestión de Comandos": [
             ("!comandos", "Ver todos los comandos disponibles"),
             ("!registrar_comando", "Registrar un comando personalizado (Solo Administradores)")
+        ],
+        "Respuestas Automáticas": [
+            ("!config_autorespuesta", "Configurar canal de respuestas automáticas"),
+            ("!agregar_autorespuesta", "Añadir respuesta automática"),
+            ("!listar_autorespuestas", "Listar respuestas automáticas")
         ]
     }
     
@@ -869,58 +922,6 @@ async def on_message(message):
     except Exception as e:
         logger.error(f"Error en respuestas automáticas: {e}")
 
-# Comando de ayuda personalizado
-@bot.command(name='help')
-async def help_command(ctx):
-    """Muestra una lista de comandos disponibles"""
-    embed = discord.Embed(
-        title="🤖 Comandos Disponibles", 
-        description="Lista de comandos para interactuar con el bot", 
-        color=discord.Color.blue()
-    )
-    
-    comandos = {
-        "Información": [
-            ("!ping", "Muestra la latencia del bot"),
-            ("!info", "Información básica del bot"),
-            ("!diagnostico", "Diagnóstico de permisos (Solo Administradores)"),
-            ("!servidor", "Información del servidor actual"),
-            ("!miembro @usuario", "Información de un miembro específico"),
-            ("!avatar @usuario", "Muestra el avatar de un usuario")
-        ],
-        "Moderación": [
-            ("!kick @usuario", "Expulsa a un miembro"),
-            ("!ban @usuario", "Banea a un miembro"),
-            ("!clear [cantidad]", "Elimina mensajes (máx. 100)"),
-            ("!config_bienvenida", "Configura canal de bienvenida"),
-            ("!warn @usuario", "Advierte a un miembro")
-        ],
-        "Diversión": [
-            ("!dado", "Lanza un dado"),
-            ("!moneda", "Lanza una moneda"),
-            ("!encuesta [pregunta]", "Crea una encuesta simple")
-        ],
-        "IA": [
-            ("!chat [mensaje]", "Chatear con el asistente de IA"),
-            ("@TDPBot", "Mencióname para obtener una respuesta")
-        ],
-        "Gestión de Comandos": [
-            ("!comandos", "Ver todos los comandos disponibles"),
-            ("!registrar_comando", "Registrar un comando personalizado (Solo Administradores)")
-        ],
-        "Respuestas Automáticas": [
-            ("!config_autorespuesta", "Configurar canal de respuestas automáticas"),
-            ("!agregar_autorespuesta", "Añadir respuesta automática"),
-            ("!listar_autorespuestas", "Listar respuestas automáticas")
-        ]
-    }
-    
-    for categoria, lista_comandos in comandos.items():
-        valor_comandos = "\n".join([f"`{cmd}`: {desc}" for cmd, desc in lista_comandos])
-        embed.add_field(name=categoria, value=valor_comandos, inline=False)
-    
-    await ctx.send(embed=embed)
-
 # Comando de prueba
 @bot.command(name='ping')
 async def ping(ctx):
@@ -1012,7 +1013,7 @@ async def miembro(ctx, miembro: discord.Member = None):
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
-        await ctx.send("Comando no encontrado. Usa !help para ver los comandos disponibles.")
+        await ctx.send("Comando no encontrado. Usa !ayuda para ver los comandos disponibles.")
     elif isinstance(error, commands.MissingPermissions):
         await ctx.send("No tienes permisos para usar este comando.")
     elif isinstance(error, commands.BadArgument):
@@ -1075,7 +1076,7 @@ def configurar_respuestas_predeterminadas(guild_id):
         # Información del servidor
         {"trigger": "reglas", "respuesta": "Recuerda leer nuestras reglas en el canal #reglas-servidor para una mejor convivencia 📜"},
         {"trigger": "discord", "respuesta": "¡Estamos usando Discord para comunicarnos! Si necesitas ayuda, menciona a un moderador 🎮"},
-        {"trigger": "ayuda", "respuesta": "Para obtener ayuda, usa !help o menciona a un moderador. Estamos aquí para asistirte 🤝"},
+        {"trigger": "ayuda", "respuesta": "Para obtener ayuda, usa !ayuda o menciona a un moderador. Estamos aquí para asistirte 🤝"},
         
         # Moderación y comportamiento
         {"trigger": "moderador", "respuesta": "Los moderadores están para ayudar. Sé respetuoso y sigue las reglas del servidor 🛡️"},
@@ -1086,7 +1087,7 @@ def configurar_respuestas_predeterminadas(guild_id):
         {"trigger": "invitar", "respuesta": "¿Quieres invitar a alguien? Comparte el enlace de invitación con tus amigos 🤝"},
         
         # Tono amigable y comunidad
-        {"trigger": "bot", "respuesta": "¡Soy el bot oficial del servidor! Usa !help para ver mis comandos 🤖"},
+        {"trigger": "bot", "respuesta": "¡Soy el bot oficial del servidor! Usa !ayuda para ver mis comandos 🤖"},
         {"trigger": "comunidad", "respuesta": "Bienvenido a nuestra increíble comunidad. Aquí nos respetamos y nos divertimos juntos 🌈"},
         
         # Preguntas frecuentes
@@ -1175,7 +1176,7 @@ async def on_guild_join(guild):
             title="🤖 Bot Instalado Exitosamente", 
             description="Gracias por agregarme a tu servidor. He configurado respuestas automáticas predeterminadas.\n\n"
                         "Comandos útiles:\n"
-                        "- `!help`: Ver todos los comandos\n"
+                        "- `!ayuda`: Ver todos los comandos\n"
                         "- `!online`: Ver usuarios en línea\n"
                         "- `!comandos`: Ver comandos del servidor", 
             color=discord.Color.blue()
@@ -1184,59 +1185,6 @@ async def on_guild_join(guild):
         await canal_bienvenida.send(embed=embed)
     except Exception as e:
         logger.error(f"Error en evento de ingreso a servidor: {e}")
-
-# Actualizar comando de ayuda
-@bot.command(name='help')
-async def help_command(ctx):
-    """Muestra una lista de comandos disponibles"""
-    embed = discord.Embed(
-        title="🤖 Comandos Disponibles", 
-        description="Lista de comandos para interactuar con el bot", 
-        color=discord.Color.blue()
-    )
-    
-    comandos = {
-        "Información": [
-            ("!ping", "Muestra la latencia del bot"),
-            ("!info", "Información básica del bot"),
-            ("!diagnostico", "Diagnóstico de permisos (Solo Administradores)"),
-            ("!servidor", "Información del servidor actual"),
-            ("!miembro @usuario", "Información de un miembro específico"),
-            ("!avatar @usuario", "Muestra el avatar de un usuario"),
-            ("!online", "Ver usuarios en línea")
-        ],
-        "Moderación": [
-            ("!kick @usuario", "Expulsa a un miembro"),
-            ("!ban @usuario", "Banea a un miembro"),
-            ("!clear [cantidad]", "Elimina mensajes (máx. 100)"),
-            ("!config_bienvenida", "Configura canal de bienvenida"),
-            ("!warn @usuario", "Advierte a un miembro")
-        ],
-        "Diversión": [
-            ("!dado", "Lanza un dado"),
-            ("!moneda", "Lanza una moneda"),
-            ("!encuesta [pregunta]", "Crea una encuesta simple")
-        ],
-        "IA": [
-            ("!chat [mensaje]", "Chatear con el asistente de IA"),
-            ("@TDPBot", "Mencióname para obtener una respuesta")
-        ],
-        "Gestión de Comandos": [
-            ("!comandos", "Ver todos los comandos disponibles"),
-            ("!registrar_comando", "Registrar un comando personalizado (Solo Administradores)")
-        ],
-        "Respuestas Automáticas": [
-            ("!config_autorespuesta", "Configurar canal de respuestas automáticas"),
-            ("!agregar_autorespuesta", "Añadir respuesta automática"),
-            ("!listar_autorespuestas", "Listar respuestas automáticas")
-        ]
-    }
-    
-    for categoria, lista_comandos in comandos.items():
-        valor_comandos = "\n".join([f"`{cmd}`: {desc}" for cmd, desc in lista_comandos])
-        embed.add_field(name=categoria, value=valor_comandos, inline=False)
-    
-    await ctx.send(embed=embed)
 
 # Iniciar bot al ejecutar el script
 if __name__ == '__main__':
